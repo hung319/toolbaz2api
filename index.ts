@@ -1,6 +1,7 @@
 // =================================================================================
 //  Project: toolbaz-2api-openai-standard
-//  Status: FIXED (IdleTimeout 255s | No ANSI Colors)
+//  Status: UPDATED (All Models Added)
+//  Compat: OpenAI SDKs, LangChain, Next.js AI
 // =================================================================================
 
 const CONFIG = {
@@ -14,10 +15,38 @@ const CONFIG = {
   PROMPT_SUFFIX: "\u3164", 
 };
 
-// --- [Logger - Clean No Colors] ---
-// Đã loại bỏ các mã màu gây lỗi hiển thị
-const C = { G: "", Y: "", B: "", RST: "" };
+// --- [All Supported Models] ---
+const ALL_MODELS = [
+  // By Google
+  "gemini-2.5-pro",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash-thinking",
+  "gemini-2.0-flash",
+  // By Anthropic
+  "claude-sonnet-4",
+  // By OpenAI
+  "gpt-5",
+  "gpt-oss-120b",
+  "o3-mini",
+  "gpt-4o-latest",
+  // By DeepSeek
+  "deepseek-v3.1",
+  "deepseek-v3",
+  "deepseek-r1",
+  // By xAI
+  "grok-4-fast",
+  // By ToolBaz
+  "toolbaz-v4.5-fast",
+  "toolbaz_v4",
+  // By Meta
+  "Llama-4-Maverick",
+  // Unfiltered / Others
+  "L3-70B-Euryale-v2.1",
+  "midnight-rose",
+  "unfiltered_x"
+];
 
+// --- [Logger] ---
 function log(id, msg, time) {
   const t = time ? ` (${time.toFixed(0)}ms)` : '';
   console.log(`[${new Date().toLocaleTimeString()}] [${id}] ${msg}${t}`);
@@ -42,7 +71,7 @@ console.log(`🚀 OpenAI Compatible Server running at http://localhost:${CONFIG.
 
 Bun.serve({
   port: CONFIG.PORT,
-  idleTimeout: 255, // Max value for Bun
+  idleTimeout: 255, 
   
   async fetch(req) {
     const url = new URL(req.url);
@@ -77,7 +106,7 @@ async function handleChat(req) {
   try { body = await req.json(); } catch(e) { return new Response("Bad JSON", { status: 400 }); }
   
   const lastMsg = (body.messages || []).pop()?.content || "";
-  const model = body.model || "gemini-2.5-flash";
+  const model = body.model || "gemini-2.5-flash"; // Default fallback
   const isStream = body.stream === true;
   const finalPrompt = `${CONFIG.PROMPT_PREFIX}${lastMsg}${CONFIG.PROMPT_SUFFIX}`;
 
@@ -196,8 +225,7 @@ async function handleChat(req) {
 
 // --- [Helpers] ---
 function handleModels() {
-    const models = ["gemini-2.5-flash", "gemini-2.5-pro", "gpt-5", "claude-sonnet-4"];
-    const data = models.map(m => ({
+    const data = ALL_MODELS.map(m => ({
         id: m, object: "model", created: 1677610602, owned_by: "toolbaz"
     }));
     return new Response(JSON.stringify({ object: "list", data }), { headers: corsHeaders({'Content-Type': 'application/json'}) });
