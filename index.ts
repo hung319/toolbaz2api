@@ -1,10 +1,10 @@
 // =================================================================================
 //  Project: toolbaz-2api-openai-standard
-//  Status: FIXED (IdleTimeout limit 255s)
+//  Status: FIXED (IdleTimeout 255s | No ANSI Colors)
 // =================================================================================
 
 const CONFIG = {
-  API_KEY: process.env.API_KEY || "1",
+  API_KEY: process.env.API_KEY || "sk-toolbaz-free",
   PORT: process.env.PORT || 3000,
   UPSTREAM_DOMAIN: "data.toolbaz.com",
   ORIGIN_DOMAIN: "https://toolbaz.com",
@@ -14,11 +14,13 @@ const CONFIG = {
   PROMPT_SUFFIX: "\u3164", 
 };
 
-// --- [Logger] ---
-const C = { G: "\x1b[32m", Y: "\x1b[33m", B: "\x1b[34m", RST: "\x1b[0m" };
+// --- [Logger - Clean No Colors] ---
+// Đã loại bỏ các mã màu gây lỗi hiển thị
+const C = { G: "", Y: "", B: "", RST: "" };
+
 function log(id, msg, time) {
-  const t = time ? ` ${C.Y}(${time.toFixed(0)}ms)${C.RST}` : '';
-  console.log(`${C.B}[${new Date().toLocaleTimeString()}]${C.RST} [${id}] ${msg}${t}`);
+  const t = time ? ` (${time.toFixed(0)}ms)` : '';
+  console.log(`[${new Date().toLocaleTimeString()}] [${id}] ${msg}${t}`);
 }
 
 // --- [Token Logic] ---
@@ -36,11 +38,11 @@ class TokenGenerator {
 }
 
 // --- [Server Entry] ---
-console.log(`${C.G}🚀 OpenAI Compatible Server running at http://localhost:${CONFIG.PORT}${C.RST}`);
+console.log(`🚀 OpenAI Compatible Server running at http://localhost:${CONFIG.PORT}`);
 
 Bun.serve({
   port: CONFIG.PORT,
-  idleTimeout: 255, // 🔥 Đã sửa: Max value cho Bun là 255
+  idleTimeout: 255, // Max value for Bun
   
   async fetch(req) {
     const url = new URL(req.url);
