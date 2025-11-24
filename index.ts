@@ -1,6 +1,6 @@
 // =================================================================================
-//  Project: toolbaz-2api-headless (Fix Timeout & Stream Crash)
-//  Runtime: Bun (v1.3+)
+//  Project: toolbaz-2api-headless
+//  Mode: DEEP DEBUG (Log everything: Headers, Payloads, Raw Responses)
 // =================================================================================
 
 const CONFIG = {
@@ -10,173 +10,177 @@ const CONFIG = {
   ORIGIN_DOMAIN: "https://toolbaz.com",
   REFERER_URL: "https://toolbaz.com/",
   USER_AGENT: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0",
+  // Prompt wrapper
   PROMPT_PREFIX: "Generate an original and engaging piece of writing on the following topic : ",
   PROMPT_SUFFIX: "\u3164", 
-  MODELS: ["gemini-2.5-flash", "gemini-2.5-pro", "gpt-5", "claude-sonnet-4"]
 };
 
-// --- [Utility Classes] ---
-class TokenGenerator {
-  static generateRandomString(length) {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let result = "";
-    for (let i = 0; i < length; i++) result += chars.charAt(Math.floor(Math.random() * chars.length));
-    return result;
-  }
+// --- [Colors for Visibility] ---
+const C = {
+  R: "\x1b[31m", G: "\x1b[32m", Y: "\x1b[33m", B: "\x1b[34m", DIM: "\x1b[2m", RST: "\x1b[0m", CYAN: "\x1b[36m"
+};
 
+function log(step, data) {
+  console.log(`${C.CYAN}[${new Date().toLocaleTimeString()}]${C.RST} ${C.B}[${step}]${C.RST}`);
+  if (typeof data === 'string') console.log(data);
+  else console.log(JSON.stringify(data, null, 2));
+  console.log(C.DIM + "-".repeat(50) + C.RST);
+}
+
+// --- [Token Logic] ---
+class TokenGenerator {
+  static generateRandomString(len) {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let res = ""; for (let i = 0; i < len; i++) res += chars.charAt(Math.floor(Math.random() * chars.length)); return res;
+  }
   static generatePayloadToken() {
     const payload = {
       nV5kP: CONFIG.USER_AGENT, lQ9jX: "vi", sD2zR: "1536x864", tY4hL: "Asia/Saigon", pL8mC: "Win32", cQ3vD: 24, hK7jN: 12
     };
-    const uT4bX = { mM9wZ: [], kP8jY: [] };
     const data = {
-      bR6wF: payload, uT4bX: uT4bX, tuTcS: Math.floor(Date.now() / 1000), tDfxy: "null", RtyJt: this.generateRandomString(36)
+      bR6wF: payload, uT4bX: { mM9wZ: [], kP8jY: [] }, tuTcS: Math.floor(Date.now() / 1000), tDfxy: "null", RtyJt: this.generateRandomString(36)
     };
-    const binaryString = Array.from(new TextEncoder().encode(JSON.stringify(data)), c => String.fromCharCode(c)).join("");
-    return this.generateRandomString(6) + btoa(binaryString);
+    const bin = Array.from(new TextEncoder().encode(JSON.stringify(data)), c => String.fromCharCode(c)).join("");
+    return this.generateRandomString(6) + btoa(bin);
   }
 }
 
-// --- [Server Logic] ---
-console.log(`🚀 Headless API running at http://localhost:${CONFIG.PORT}`);
+// --- [Server] ---
+console.log(`${C.G}🚀 DEBUG Server running at http://localhost:${CONFIG.PORT}${C.RST}`);
 
 Bun.serve({
   port: CONFIG.PORT,
-  // 🔥 FIX 1: Tăng thời gian chờ (idleTimeout) lên 120s (hoặc cao hơn nếu cần)
-  idleTimeout: 120, 
-  
-  async fetch(request) {
-    const url = new URL(request.url);
-
-    if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() });
-
-    try {
-      if (url.pathname === '/v1/chat/completions' && request.method === 'POST') {
-        return await handleChatCompletions(request);
-      }
-      if (url.pathname === '/v1/models') return handleModelsRequest();
-
-      return new Response(JSON.stringify({ error: "Not Found" }), { status: 404, headers: { 'Content-Type': 'application/json' } });
-    } catch (err) {
-      console.error("Server Error:", err);
-      return new Response(JSON.stringify({ error: err.message || "Unknown Error" }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  idleTimeout: 120,
+  async fetch(req) {
+    const url = new URL(req.url);
+    if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() });
+    
+    if (url.pathname === '/v1/chat/completions' && req.method === 'POST') {
+      return await handleDebugChat(req);
     }
+    return new Response("Not Found", { status: 404 });
   }
 });
 
-// --- [Core Logic] ---
-async function handleChatCompletions(request) {
-  const auth = request.headers.get('Authorization');
-  if (!auth || auth !== `Bearer ${CONFIG.API_KEY}`) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+// --- [Debug Handler] ---
+async function handleDebugChat(req) {
+  const requestId = TokenGenerator.generateRandomString(4);
+  console.log(`\n${C.G}=== NEW REQUEST [${requestId}] ===${C.RST}`);
 
+  // 1. Check Auth
+  const auth = req.headers.get('Authorization');
+  if (auth !== `Bearer ${CONFIG.API_KEY}`) {
+    log("AUTH", "Failed");
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  // 2. Parse Input
   let body;
-  try { body = await request.json(); } catch(e) { return new Response("Invalid JSON", { status: 400 }); }
-  
-  const lastMsg = (body.messages || []).pop()?.content || "Hello";
-  const model = body.model || "gemini-2.5-flash";
-  const requestId = `chatcmpl-${crypto.randomUUID()}`;
+  try { body = await req.json(); } catch(e) { return new Response("Bad JSON", { status: 400 }); }
+  const lastMsg = (body.messages || []).pop()?.content || "";
   const finalPrompt = `${CONFIG.PROMPT_PREFIX}${lastMsg}${CONFIG.PROMPT_SUFFIX}`;
+  
+  log("INPUT", { model: body.model, promptLength: finalPrompt.length });
 
+  // 3. Prepare Stream
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
   const encoder = new TextEncoder();
 
-  // 🔥 Signal để hủy request upstream nếu client ngắt kết nối
-  const controller = new AbortController();
-  request.signal.addEventListener("abort", () => controller.abort());
-
+  // 4. Execute Async
   (async () => {
     try {
-      const tokenPayload = TokenGenerator.generatePayloadToken();
-      const headers = getHeaders();
+      const headers = {
+        'Accept': '*/*', 
+        'Accept-Language': 'vi', 
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'Origin': CONFIG.ORIGIN_DOMAIN, 
+        'Referer': CONFIG.REFERER_URL, 
+        'User-Agent': CONFIG.USER_AGENT,
+        'sec-ch-ua': '"Chromium";v="142", "Microsoft Edge";v="142", "Not_A Brand";v="99"',
+        'sec-ch-ua-mobile': '?0', 
+        'sec-ch-ua-platform': '"Windows"', 
+        'Sec-Fetch-Dest': 'empty', 
+        'Sec-Fetch-Mode': 'cors', 
+        'Sec-Fetch-Site': 'same-site'
+      };
 
-      // Step 1: Token
-      const tokenRes = await fetch(`https://${CONFIG.UPSTREAM_DOMAIN}/token.php`, {
-        method: 'POST', headers, 
-        body: new URLSearchParams({ session_id: '', token: tokenPayload }),
-        signal: controller.signal
+      // --- STEP A: TOKEN ---
+      const localToken = TokenGenerator.generatePayloadToken();
+      log("STEP A: Local Token Generated", localToken.substring(0, 30) + "...");
+
+      const tokenUrl = `https://${CONFIG.UPSTREAM_DOMAIN}/token.php`;
+      const tokenBody = new URLSearchParams();
+      tokenBody.append('session_id', '');
+      tokenBody.append('token', localToken);
+
+      log("STEP A: Sending Request", { url: tokenUrl, body: tokenBody.toString() });
+
+      const tokenRes = await fetch(tokenUrl, {
+        method: 'POST', headers: headers, body: tokenBody
       });
+
+      const tokenRaw = await tokenRes.text();
+      log("STEP A: Response", { status: tokenRes.status, rawBody: tokenRaw });
+
+      if (!tokenRes.ok) throw new Error(`Token HTTP ${tokenRes.status}`);
       
-      if (!tokenRes.ok) throw new Error(`Token fetch failed: ${tokenRes.status}`);
-      const tokenData = await tokenRes.json();
-      if (!tokenData.success) throw new Error("Failed to generate token");
+      let tokenData;
+      try { tokenData = JSON.parse(tokenRaw); } catch(e) { throw new Error("Token Response is NOT JSON (Likely HTML Block)"); }
+      
+      if (!tokenData.success) throw new Error(`Token API refused: ${JSON.stringify(tokenData)}`);
 
-      // Step 2: Chat Request
-      const chatRes = await fetch(`https://${CONFIG.UPSTREAM_DOMAIN}/writing.php`, {
-        method: 'POST', headers,
-        body: new URLSearchParams({ text: finalPrompt, capcha: tokenData.token, model, session_id: '' }),
-        signal: controller.signal
+      // --- STEP B: CHAT ---
+      const chatUrl = `https://${CONFIG.UPSTREAM_DOMAIN}/writing.php`;
+      const chatBody = new URLSearchParams();
+      chatBody.append('text', finalPrompt);
+      chatBody.append('capcha', tokenData.token);
+      chatBody.append('model', body.model || "gemini-2.5-flash");
+      chatBody.append('session_id', '');
+
+      log("STEP B: Sending Chat", { url: chatUrl, model: body.model });
+
+      const chatRes = await fetch(chatUrl, {
+        method: 'POST', headers: headers, body: chatBody
       });
 
-      if (!chatRes.ok) throw new Error(`Chat API failed: ${chatRes.status}`);
+      const chatRaw = await chatRes.text();
+      // Log 200 ký tự đầu tiên để xem có phải lỗi không
+      log("STEP B: Response", { status: chatRes.status, preview: chatRaw.substring(0, 200) + "..." });
 
-      const rawText = await chatRes.text();
-      const cleanText = cleanResponse(rawText);
+      if (!chatRes.ok) throw new Error(`Chat HTTP ${chatRes.status}`);
 
-      // Stream Simulation
-      const chunkSize = 20;
-      for (let i = 0; i < cleanText.length; i += chunkSize) {
-        // 🔥 Kiểm tra nếu writer đã đóng trước khi ghi
-        if (request.signal.aborted) break;
+      const cleanText = chatRaw.replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n\n').replace(/<[^>]+>/g, '').trim();
 
-        const content = cleanText.slice(i, i + chunkSize);
-        const chunk = JSON.stringify({
-          id: requestId, object: 'chat.completion.chunk', created: Math.floor(Date.now()/1000), model,
-          choices: [{ index: 0, delta: { content }, finish_reason: null }]
-        });
-        await writer.write(encoder.encode(`data: ${chunk}\n\n`));
-        await new Promise(r => setTimeout(r, 10));
+      if (cleanText.includes("Session ID is invalid") || cleanText.length < 2) {
+        log("ERROR", "Detected Invalid Session or Empty Response in body");
+        throw new Error("Upstream rejected session or returned empty");
       }
 
-      if (!request.signal.aborted) {
-        await writer.write(encoder.encode(`data: [DONE]\n\n`));
-      }
+      // --- STEP C: STREAM ---
+      const chunk = JSON.stringify({
+          id: `chatcmpl-${requestId}`, object: 'chat.completion.chunk', created: Math.floor(Date.now()/1000), model: body.model,
+          choices: [{ index: 0, delta: { content: cleanText }, finish_reason: null }]
+      });
+      await writer.write(encoder.encode(`data: ${chunk}\n\n`));
+      await writer.write(encoder.encode(`data: [DONE]\n\n`));
+      log("SUCCESS", "Stream Sent");
 
-    } catch (error) {
-      // Log lỗi chi tiết hơn
-      if (error.name !== 'AbortError') {
-         console.error("Stream Error:", error);
-         try {
-             const errChunk = JSON.stringify({
-                id: requestId, object: 'chat.completion.chunk', created: Math.floor(Date.now()/1000), model,
-                choices: [{ index: 0, delta: { content: `\n[Error: ${error.message || String(error)}]` }, finish_reason: "error" }]
-             });
-             await writer.write(encoder.encode(`data: ${errChunk}\n\n`));
-             await writer.write(encoder.encode(`data: [DONE]\n\n`));
-         } catch (writeErr) {
-             // Ignore write errors if stream is already dead
-         }
-      }
+    } catch (err) {
+      log(`${C.R}FATAL ERROR${C.RST}`, err.message);
+      const errChunk = JSON.stringify({
+          id: `err-${requestId}`, object: 'chat.completion.chunk', created: Math.floor(Date.now()/1000), model: body.model,
+          choices: [{ index: 0, delta: { content: `\n[DEBUG ERROR]: ${err.message}` }, finish_reason: "error" }]
+       });
+       try { await writer.write(encoder.encode(`data: ${errChunk}\n\n`)); await writer.write(encoder.encode(`data: [DONE]\n\n`)); } catch(e){}
     } finally {
-      // 🔥 FIX 2: Safe Close - chỉ đóng nếu chưa đóng và bắt lỗi
-      try {
-        await writer.close();
-      } catch (e) {
-        // Ignore "Cannot close a writable stream that is closed or errored"
-      }
+      try { await writer.close(); } catch(e){}
     }
   })();
 
-  return new Response(readable, {
-    headers: corsHeaders({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
-  });
+  return new Response(readable, { headers: corsHeaders({'Content-Type': 'text/event-stream'}) });
 }
 
-// --- [Helpers] ---
-function getHeaders() {
-  return {
-    'Accept': '*/*', 'Accept-Language': 'vi', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-    'Origin': CONFIG.ORIGIN_DOMAIN, 'Referer': CONFIG.REFERER_URL, 'User-Agent': CONFIG.USER_AGENT,
-    'sec-ch-ua': '"Chromium";v="142", "Microsoft Edge";v="142", "Not_A Brand";v="99"',
-    'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"Windows"', 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Site': 'same-site'
-  };
-}
-function cleanResponse(text) {
-  return text.replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n\n').replace(/<[^>]+>/g, '').trim();
-}
-function handleModelsRequest() {
-  return new Response(JSON.stringify({ object: 'list', data: CONFIG.MODELS.map(id => ({ id, object: 'model', created: Math.floor(Date.now()/1000), owned_by: 'toolbaz-headless' })) }), { headers: corsHeaders({'Content-Type': 'application/json'}) });
-}
-function corsHeaders(extra = {}) {
+function corsHeaders(extra={}) {
   return { ...extra, 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' };
 }
