@@ -1,11 +1,10 @@
 // =================================================================================
 //  Project: toolbaz-2api-openai-standard
-//  Status: PRODUCTION READY
-//  Compat: Fully compatible with OpenAI SDKs (Python/Node/LangChain)
+//  Status: FIXED (IdleTimeout limit 255s)
 // =================================================================================
 
 const CONFIG = {
-  API_KEY: process.env.API_KEY || "sk-toolbaz-free", // Prefix 'sk-' cho giống thật
+  API_KEY: process.env.API_KEY || "1",
   PORT: process.env.PORT || 3000,
   UPSTREAM_DOMAIN: "data.toolbaz.com",
   ORIGIN_DOMAIN: "https://toolbaz.com",
@@ -41,7 +40,7 @@ console.log(`${C.G}🚀 OpenAI Compatible Server running at http://localhost:${C
 
 Bun.serve({
   port: CONFIG.PORT,
-  idleTimeout: 300, // 5 phút timeout cho các model chậm
+  idleTimeout: 255, // 🔥 Đã sửa: Max value cho Bun là 255
   
   async fetch(req) {
     const url = new URL(req.url);
@@ -64,12 +63,10 @@ Bun.serve({
 
 // --- [Main Handler] ---
 async function handleChat(req) {
-  const start = performance.now();
-  const reqId = "chatcmpl-" + TokenGenerator.generateRandomString(24); // ID chuẩn OpenAI
+  const reqId = "chatcmpl-" + TokenGenerator.generateRandomString(24);
   
   // 1. Auth & Parse
   const auth = req.headers.get('Authorization');
-  // Chấp nhận mọi key bắt đầu bằng Bearer
   if (!auth || !auth.startsWith('Bearer ')) {
      return new Response(JSON.stringify({ error: { message: "Missing API Key", type: "invalid_request_error", code: "401" } }), { status: 401 });
   }
@@ -79,7 +76,7 @@ async function handleChat(req) {
   
   const lastMsg = (body.messages || []).pop()?.content || "";
   const model = body.model || "gemini-2.5-flash";
-  const isStream = body.stream === true; // Check stream mode
+  const isStream = body.stream === true;
   const finalPrompt = `${CONFIG.PROMPT_PREFIX}${lastMsg}${CONFIG.PROMPT_SUFFIX}`;
 
   log(reqId.substring(0,8), `Mode: ${isStream ? 'STREAM' : 'JSON'} | Model: ${model}`);
@@ -118,8 +115,6 @@ async function handleChat(req) {
     
     log(reqId.substring(0,8), `Got Content (${cleanText.length} chars)`, performance.now() - t2);
 
-    // 3. Response Generation (JSON or Stream)
-    
     const created = Math.floor(Date.now() / 1000);
 
     // === MODE 1: JSON (Non-Streaming) ===
@@ -162,7 +157,7 @@ async function handleChat(req) {
             };
             await writer.write(encoder.encode(`data: ${JSON.stringify(roleChunk)}\n\n`));
 
-            // Chunks 2...N: Content (Simulated Streaming)
+            // Chunks 2...N: Content
             const chunkSize = 15; 
             for (let i = 0; i < cleanText.length; i += chunkSize) {
                 const chunkContent = cleanText.slice(i, i + chunkSize);
@@ -171,7 +166,7 @@ async function handleChat(req) {
                     choices: [{ index: 0, delta: { content: chunkContent }, finish_reason: null }]
                 };
                 await writer.write(encoder.encode(`data: ${JSON.stringify(contentChunk)}\n\n`));
-                await new Promise(r => setTimeout(r, 10)); // Delay tạo hiệu ứng gõ
+                await new Promise(r => setTimeout(r, 10));
             }
 
             // Chunk Last: Finish Reason
@@ -185,7 +180,7 @@ async function handleChat(req) {
         } catch (e) {
             console.error(e);
         } finally {
-            await writer.close();
+            try { await writer.close(); } catch(e){}
         }
     })();
 
